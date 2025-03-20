@@ -91,24 +91,24 @@ void guac_kalman_filter_set_layer_priority(guac_kalman_filter* filter, int layer
     
     filter->layer_priorities[layer_id] = priority;
     
-    // 根据优先级调整卡尔曼滤波参数
+    // 根据优先级调整参数
     switch (priority) {
-        case LAYER_PRIORITY_VIDEO:
-            filter->process_noise = 0.001;  // 低过程噪声
-            filter->measurement_noise_x = 0.2;  // 高测量噪声
-            filter->measurement_noise_y = 0.2;
-            break;
-        case LAYER_PRIORITY_DYNAMIC:
-            filter->process_noise = 0.005;
-            filter->measurement_noise_x = 0.1;
-            filter->measurement_noise_y = 0.1;
-            break;
         case LAYER_PRIORITY_STATIC:
-            filter->process_noise = 0.01;
-            filter->measurement_noise_x = 0.05;
-            filter->measurement_noise_y = 0.05;
+            filter->config_process_noise = 0.001;  // 低过程噪声
+            filter->config_measurement_noise_x = 0.2;  // 高测量噪声
+            filter->config_measurement_noise_y = 0.2;
             break;
-        default:
+        
+        case LAYER_PRIORITY_DYNAMIC:
+            filter->config_process_noise = 0.005;
+            filter->config_measurement_noise_x = 0.1;
+            filter->config_measurement_noise_y = 0.1;
+            break;
+        
+        case LAYER_PRIORITY_VIDEO:
+            filter->config_process_noise = 0.01;
+            filter->config_measurement_noise_x = 0.05;
+            filter->config_measurement_noise_y = 0.05;
             break;
     }
 }
@@ -217,21 +217,17 @@ void guac_kalman_filter_adjust_quality(guac_kalman_filter* filter) {
     if (!filter)
         return;
     
-    bandwidth_prediction_t* pred = &filter->bandwidth_prediction;
-    
     // 根据带宽预测调整质量
-    if (pred->predicted_bandwidth < pred->current_bandwidth * 0.7) {
-        // 带宽受限，降低质量
-        filter->target_quality = (int)(filter->target_quality * 0.8);
-        filter->process_noise *= 0.7;  // 降低过程噪声
-        filter->measurement_noise_x *= 1.4;  // 增加测量噪声
-        filter->measurement_noise_y *= 1.4;
-    } else if (pred->predicted_bandwidth > pred->current_bandwidth * 1.3) {
+    if (filter->bandwidth_prediction.current_bandwidth < filter->target_bandwidth * 0.8) {
+        // 带宽不足，降低质量
+        filter->config_process_noise *= 0.7;  // 降低过程噪声
+        filter->config_measurement_noise_x *= 1.4;  // 增加测量噪声
+        filter->config_measurement_noise_y *= 1.4;
+    } else if (filter->bandwidth_prediction.current_bandwidth > filter->target_bandwidth * 1.2) {
         // 带宽充足，提高质量
-        filter->target_quality = (int)(filter->target_quality * 1.2);
-        filter->process_noise *= 1.3;
-        filter->measurement_noise_x *= 0.8;
-        filter->measurement_noise_y *= 0.8;
+        filter->config_process_noise *= 1.3;
+        filter->config_measurement_noise_x *= 0.8;
+        filter->config_measurement_noise_y *= 0.8;
     }
 }
 
@@ -279,17 +275,22 @@ void guac_kalman_filter_detect_scene_change(guac_kalman_filter* filter, const un
 void guac_kalman_filter_handle_scene_change(guac_kalman_filter* filter) {
     if (!filter)
         return;
-    
-    scene_change_detection_t* scene = &filter->scene_detection;
-    
-    if (scene->is_scene_changing) {
-        // 场景切换时调整滤波参数
-        filter->process_noise *= 2.0;  // 增加过程噪声
-        filter->measurement_noise_x *= 0.5;  // 降低测量噪声
-        filter->measurement_noise_y *= 0.5;
-        
-        // 重置卡尔曼滤波器状态
-        cuda_kalman_init_matrices(filter->F, filter->H, filter->Q, filter->R, filter->P, filter->state);
+
+    if (filter->scene_detection.is_scene_changing) {
+        // 场景切换时调整参数
+        filter->config_process_noise *= 2.0;  // 增加过程噪声
+        filter->config_measurement_noise_x *= 0.5;  // 降低测量噪声
+        filter->config_measurement_noise_y *= 0.5;
+
+        // 重新初始化CUDA矩阵
+        cuda_kalman_init_matrices(
+            (const double*)filter->F,
+            (const double*)filter->H,
+            (const double*)filter->Q,
+            (const double*)filter->R,
+            (const double*)filter->P,
+            filter->state
+        );
     }
 }
 

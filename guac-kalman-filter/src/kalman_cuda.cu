@@ -358,7 +358,6 @@ bool cuda_kalman_update(const double* measurement, double* updated_state) {
     blockDim = dim3(32, 1);
     gridDim = dim3((MEAS_DIM + blockDim.x - 1) / blockDim.x, 1);
     
-    double predicted_measurement[MEAS_DIM];
     double *d_predicted_measurement;
     CUDA_CHECK(cudaMalloc((void**)&d_predicted_measurement, MEAS_DIM * sizeof(double)));
     

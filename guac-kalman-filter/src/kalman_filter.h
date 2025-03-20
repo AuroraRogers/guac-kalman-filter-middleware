@@ -117,6 +117,16 @@ typedef struct guac_kalman_filter {
     double* d_temp3;      // Temporary workspace
     double* d_temp4;      // Temporary workspace
 
+    // 基本配置
+    int max_layers;       // 最大图层数
+    int max_regions;      // 最大区域数
+    double sampling_rate; // 采样率
+
+    // 噪声参数
+    double process_noise;        // 过程噪声
+    double measurement_noise_x;  // X方向测量噪声
+    double measurement_noise_y;  // Y方向测量噪声
+
     /**
      * Process noise covariance matrix (Q)
      */
@@ -410,5 +420,14 @@ void guac_kalman_filter_cleanup_buffer(guac_kalman_filter* filter);
 // 性能统计
 void guac_kalman_filter_update_performance_stats(guac_kalman_filter* filter, uint64_t processing_time);
 void guac_kalman_filter_print_performance_report(guac_kalman_filter* filter);
+
+/**
+ * 计算两帧之间的差异
+ * 
+ * @param frame1 第一帧数据
+ * @param frame2 第二帧数据
+ * @return 帧间差异值
+ */
+double calculate_frame_difference(const void* frame1, const void* frame2);
 
 #endif /* GUACAMOLE_KALMAN_FILTER_H */
