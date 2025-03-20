@@ -99,6 +99,7 @@ set(SOURCES
     src/kalman_proxy.c
     src/kalman_filter.c
     src/kalman_cuda.cu
+    src/config_parser.c
 )
 
 # 创建共享库
@@ -145,7 +146,10 @@ install(DIRECTORY src/
 )
 
 # 创建可执行文件
-add_executable(kalman-proxy src/kalman_proxy.c)
+add_executable(kalman-proxy 
+    src/kalman_proxy.c
+    src/config_parser.c
+)
 target_link_libraries(kalman-proxy
     guac-kalman-filter
     ${LIBGUAC_LIBRARIES}
