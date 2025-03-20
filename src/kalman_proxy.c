@@ -18,6 +18,12 @@
 #include <guacamole/socket.h>
 #include <guacamole/timestamp.h>
 
+// CUDA support
+#ifndef CUDA_DISABLED
+extern int cuda_kalman_init(void* filter);
+extern int cuda_kalman_update(void* filter, double measurement);
+#endif
+
 // Forward declarations
 typedef struct guac_kalman_filter guac_kalman_filter;
 typedef struct guac_instruction guac_instruction;
@@ -628,18 +634,31 @@ static int handle_connection(int client_fd, int guacd_fd) {
     return 0;
 }
 
-// CUDA initialization (stub)
+// CUDA initialization
 static int cuda_kalman_init(guac_kalman_filter* filter) {
     guacd_log(PROXY_LOG_INFO, "Initializing CUDA Kalman filter");
+    
+#ifndef CUDA_DISABLED
+    // Call the CUDA implementation
+    return cuda_kalman_init((void*)filter);
+#else
+    // CUDA is disabled, use CPU implementation
+    guacd_log(PROXY_LOG_INFO, "CUDA is disabled, using CPU implementation");
+    filter->use_cuda = 0;
     return 1; // Success
+#endif
 }
 
-// CUDA Kalman filter update (stub)
+// CUDA Kalman filter update
 static int cuda_kalman_update(guac_kalman_filter* filter, double measurement) {
-    // This would be implemented with actual CUDA code
-    double predicted_measurement[2];
-    
-    // For now, just use the CPU implementation
+#ifndef CUDA_DISABLED
+    // Call the CUDA implementation if CUDA is enabled
+    if (filter->use_cuda) {
+        return cuda_kalman_update((void*)filter, measurement);
+    }
+#endif
+
+    // CPU implementation of Kalman filter
     double k = filter->bandwidth_prediction.error_covariance / 
                (filter->bandwidth_prediction.error_covariance + filter->bandwidth_prediction.measurement_noise);
     
