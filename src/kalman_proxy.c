@@ -17,6 +17,7 @@
 #include <guacamole/user.h>
 #include <guacamole/protocol.h>
 #include <guacamole/timestamp.h>
+#include <guacamole/error.h>
 
 /* Forward declarations for nested struct types */
 typedef struct layer_priority_t layer_priority_t;
@@ -77,6 +78,15 @@ struct update_frequency_stats_t {
     double avg_interval;
 };
 
+/* Define our own log level enum to avoid conflicts with guacamole/client-types.h */
+typedef enum proxy_log_level {
+    PROXY_LOG_ERROR = 0,
+    PROXY_LOG_WARNING = 1,
+    PROXY_LOG_INFO = 2,
+    PROXY_LOG_DEBUG = 3,
+    PROXY_LOG_TRACE = 4
+} proxy_log_level;
+
 /* Function prototypes */
 static int create_server_socket(const char* host, int port);
 static int64_t get_timestamp_us(void);
@@ -90,23 +100,15 @@ static int process_select_instruction(guac_kalman_filter* filter, guac_instructi
 static int process_copy_instruction(guac_kalman_filter* filter, guac_instruction* instruction);
 static int process_end_instruction(guac_kalman_filter* filter, guac_instruction* instruction);
 
-/* Logging functions similar to guacd */
-typedef enum {
-    GUAC_LOG_ERROR = 0,
-    GUAC_LOG_WARNING = 1,
-    GUAC_LOG_INFO = 2,
-    GUAC_LOG_DEBUG = 3,
-    GUAC_LOG_TRACE = 4
-} guac_log_level;
+/* Logging functions similar to guacd - using different names to avoid conflicts */
+static proxy_log_level guacd_log_level = PROXY_LOG_INFO;
 
-static int guacd_log_level = GUAC_LOG_INFO;
-
-void guacd_log_init(guac_log_level level) {
+void guacd_log_init(proxy_log_level level) {
     guacd_log_level = level;
     openlog("guac-kalman-filter", LOG_PID, LOG_DAEMON);
 }
 
-void guacd_log(guac_log_level level, const char* format, ...) {
+void guacd_log(proxy_log_level level, const char* format, ...) {
     if (level > guacd_log_level)
         return;
         
@@ -121,23 +123,23 @@ void guacd_log(guac_log_level level, const char* format, ...) {
     
     /* Convert log level to syslog priority */
     switch (level) {
-        case GUAC_LOG_ERROR:
+        case PROXY_LOG_ERROR:
             priority = LOG_ERR;
             priority_name = "ERROR";
             break;
-        case GUAC_LOG_WARNING:
+        case PROXY_LOG_WARNING:
             priority = LOG_WARNING;
             priority_name = "WARNING";
             break;
-        case GUAC_LOG_INFO:
+        case PROXY_LOG_INFO:
             priority = LOG_INFO;
             priority_name = "INFO";
             break;
-        case GUAC_LOG_DEBUG:
+        case PROXY_LOG_DEBUG:
             priority = LOG_DEBUG;
             priority_name = "DEBUG";
             break;
-        case GUAC_LOG_TRACE:
+        case PROXY_LOG_TRACE:
             priority = LOG_DEBUG;
             priority_name = "TRACE";
             break;
@@ -172,13 +174,13 @@ static int create_server_socket(const char* host, int port) {
     
     /* Create socket */
     if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        guacd_log(GUAC_LOG_ERROR, "Failed to create socket: %s", strerror(errno));
+        guacd_log(PROXY_LOG_ERROR, "Failed to create socket: %s", strerror(errno));
         return -1;
     }
     
     /* Set socket options */
     if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
-        guacd_log(GUAC_LOG_ERROR, "Failed to set socket options: %s", strerror(errno));
+        guacd_log(PROXY_LOG_ERROR, "Failed to set socket options: %s", strerror(errno));
         close(server_socket);
         return -1;
     }
@@ -189,21 +191,21 @@ static int create_server_socket(const char* host, int port) {
     
     /* Convert IPv4 address from text to binary form */
     if (inet_pton(AF_INET, host, &server_addr.sin_addr) <= 0) {
-        guacd_log(GUAC_LOG_ERROR, "Invalid address: %s", strerror(errno));
+        guacd_log(PROXY_LOG_ERROR, "Invalid address: %s", strerror(errno));
         close(server_socket);
         return -1;
     }
     
     /* Bind the socket */
     if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        guacd_log(GUAC_LOG_ERROR, "Bind failed: %s", strerror(errno));
+        guacd_log(PROXY_LOG_ERROR, "Bind failed: %s", strerror(errno));
         close(server_socket);
         return -1;
     }
     
     /* Listen */
     if (listen(server_socket, 5) < 0) {
-        guacd_log(GUAC_LOG_ERROR, "Listen failed: %s", strerror(errno));
+        guacd_log(PROXY_LOG_ERROR, "Listen failed: %s", strerror(errno));
         close(server_socket);
         return -1;
     }
@@ -215,7 +217,7 @@ static int create_server_socket(const char* host, int port) {
 static guac_kalman_filter* guac_kalman_filter_init(guac_socket* socket) {
     guac_kalman_filter* filter = malloc(sizeof(guac_kalman_filter));
     if (!filter) {
-        guacd_log(GUAC_LOG_ERROR, "Failed to allocate memory for Kalman filter");
+        guacd_log(PROXY_LOG_ERROR, "Failed to allocate memory for Kalman filter");
         return NULL;
     }
     
@@ -275,14 +277,14 @@ static void guac_kalman_filter_free(guac_kalman_filter* filter) {
 /* Initialize CUDA for Kalman filter */
 static int cuda_kalman_init(guac_kalman_filter* filter) {
     /* This is a placeholder for actual CUDA initialization */
-    guacd_log(GUAC_LOG_DEBUG, "Initializing CUDA for Kalman filter");
+    guacd_log(PROXY_LOG_DEBUG, "Initializing CUDA for Kalman filter");
     return 1; /* Return success */
 }
 
 /* Update Kalman filter with new measurement */
 static int cuda_kalman_update(guac_kalman_filter* filter, double measurement) {
     /* This is a placeholder for actual CUDA Kalman filter update */
-    guacd_log(GUAC_LOG_DEBUG, "Updating Kalman filter with measurement: %f", measurement);
+    guacd_log(PROXY_LOG_DEBUG, "Updating Kalman filter with measurement: %f", measurement);
     
     /* Simple Kalman filter update (would be done on GPU in real implementation) */
     double prediction = filter->bandwidth_prediction.current_estimate;
@@ -402,14 +404,14 @@ static int process_end_instruction(guac_kalman_filter* filter, guac_instruction*
 static int handle_connection(int client_fd, int guacd_fd) {
     guac_socket* client_socket = guac_socket_open(client_fd);
     if (client_socket == NULL) {
-        guacd_log(GUAC_LOG_ERROR, "Failed to create client socket");
+        guacd_log(PROXY_LOG_ERROR, "Failed to create client socket");
         close(client_fd);
         return -1;
     }
     
     guac_socket* guacd_socket = guac_socket_open(guacd_fd);
     if (guacd_socket == NULL) {
-        guacd_log(GUAC_LOG_ERROR, "Failed to create guacd socket");
+        guacd_log(PROXY_LOG_ERROR, "Failed to create guacd socket");
         guac_socket_free(client_socket);
         close(guacd_fd);
         return -1;
@@ -418,7 +420,7 @@ static int handle_connection(int client_fd, int guacd_fd) {
     /* Initialize Kalman filter */
     guac_kalman_filter* filter = guac_kalman_filter_init(client_socket);
     if (filter == NULL) {
-        guacd_log(GUAC_LOG_ERROR, "Failed to initialize Kalman filter");
+        guacd_log(PROXY_LOG_ERROR, "Failed to initialize Kalman filter");
         guac_socket_free(client_socket);
         guac_socket_free(guacd_socket);
         return -1;
@@ -426,7 +428,7 @@ static int handle_connection(int client_fd, int guacd_fd) {
     
     guac_parser* parser = guac_parser_alloc();
     if (parser == NULL) {
-        guacd_log(GUAC_LOG_ERROR, "Failed to allocate parser");
+        guacd_log(PROXY_LOG_ERROR, "Failed to allocate parser");
         guac_kalman_filter_free(filter);
         guac_socket_free(client_socket);
         guac_socket_free(guacd_socket);
@@ -441,7 +443,7 @@ static int handle_connection(int client_fd, int guacd_fd) {
             if (guac_error == GUAC_STATUS_TIMEOUT)
                 continue;
                 
-            guacd_log(GUAC_LOG_ERROR, "Error reading instruction from client: %s", guac_status_string(guac_error));
+            guacd_log(PROXY_LOG_ERROR, "Error reading instruction from client: %s", guac_status_string(guac_error));
             break;
         }
         
@@ -497,7 +499,7 @@ static int handle_connection(int client_fd, int guacd_fd) {
         } while (length > 0);
         
         if (length < 0 && guac_error != GUAC_STATUS_TIMEOUT) {
-            guacd_log(GUAC_LOG_ERROR, "Error reading from guacd: %s", guac_status_string(guac_error));
+            guacd_log(PROXY_LOG_ERROR, "Error reading from guacd: %s", guac_status_string(guac_error));
             break;
         }
     }
@@ -513,16 +515,16 @@ static int handle_connection(int client_fd, int guacd_fd) {
 
 int main(int argc, char* argv[]) {
     /* Initialize logging */
-    guacd_log_init(GUAC_LOG_DEBUG);
+    guacd_log_init(PROXY_LOG_DEBUG);
     
     /* Create server socket */
     int server_socket = create_server_socket("0.0.0.0", 4822);
     if (server_socket < 0) {
-        guacd_log(GUAC_LOG_ERROR, "Failed to create server socket");
+        guacd_log(PROXY_LOG_ERROR, "Failed to create server socket");
         return 1;
     }
     
-    guacd_log(GUAC_LOG_INFO, "Kalman filter proxy listening on 0.0.0.0:4822");
+    guacd_log(PROXY_LOG_INFO, "Kalman filter proxy listening on 0.0.0.0:4822");
     
     /* Main server loop */
     while (1) {
@@ -532,7 +534,7 @@ int main(int argc, char* argv[]) {
         /* Accept client connection */
         int client_socket = accept(server_socket, (struct sockaddr*)&client_addr, &client_len);
         if (client_socket < 0) {
-            guacd_log(GUAC_LOG_ERROR, "Failed to accept client connection: %s", strerror(errno));
+            guacd_log(PROXY_LOG_ERROR, "Failed to accept client connection: %s", strerror(errno));
             continue;
         }
         
@@ -541,7 +543,7 @@ int main(int argc, char* argv[]) {
         struct sockaddr_in guacd_addr;
         
         if ((guacd_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-            guacd_log(GUAC_LOG_ERROR, "Failed to create guacd socket: %s", strerror(errno));
+            guacd_log(PROXY_LOG_ERROR, "Failed to create guacd socket: %s", strerror(errno));
             close(client_socket);
             continue;
         }
@@ -550,14 +552,14 @@ int main(int argc, char* argv[]) {
         guacd_addr.sin_port = htons(4823); /* Assuming guacd runs on port 4823 */
         
         if (inet_pton(AF_INET, "127.0.0.1", &guacd_addr.sin_addr) <= 0) {
-            guacd_log(GUAC_LOG_ERROR, "Invalid guacd address: %s", strerror(errno));
+            guacd_log(PROXY_LOG_ERROR, "Invalid guacd address: %s", strerror(errno));
             close(client_socket);
             close(guacd_fd);
             continue;
         }
         
         if (connect(guacd_fd, (struct sockaddr*)&guacd_addr, sizeof(guacd_addr)) < 0) {
-            guacd_log(GUAC_LOG_ERROR, "Failed to connect to guacd: %s", strerror(errno));
+            guacd_log(PROXY_LOG_ERROR, "Failed to connect to guacd: %s", strerror(errno));
             close(client_socket);
             close(guacd_fd);
             continue;
