@@ -23,6 +23,37 @@
 typedef struct layer_priority_t layer_priority_t;
 typedef struct layer_dependency_t layer_dependency_t;
 typedef struct update_frequency_stats_t update_frequency_stats_t;
+typedef struct bandwidth_prediction_t bandwidth_prediction_t;
+
+/* Layer priority tracking */
+struct layer_priority_t {
+    int layer_index;
+    int priority;
+    int64_t last_update;
+};
+
+/* Layer dependency tracking */
+struct layer_dependency_t {
+    int layer_index;
+    int depends_on_layer;
+};
+
+/* Update frequency statistics */
+struct update_frequency_stats_t {
+    int region_index;
+    int64_t last_update;
+    int update_count;
+    double avg_interval;
+};
+
+/* Bandwidth prediction using Kalman filter */
+struct bandwidth_prediction_t {
+    double current_estimate;
+    double error_covariance;
+    double process_noise;
+    double measurement_noise;
+    int64_t last_update;
+};
 
 /* Define the guac_instruction structure since it's not in the public API */
 typedef struct guac_instruction {
@@ -47,36 +78,18 @@ typedef struct guac_kalman_filter {
     update_frequency_stats_t* frequency_stats;
     
     /* Bandwidth prediction using Kalman filter */
-    struct {
-        double current_estimate;
-        double error_covariance;
-        double process_noise;
-        double measurement_noise;
-        int64_t last_update;
-    } bandwidth_prediction;
+    bandwidth_prediction_t bandwidth_prediction;
     
 } guac_kalman_filter;
 
-/* Layer priority tracking */
-struct layer_priority_t {
-    int layer_index;
-    int priority;
-    int64_t last_update;
-};
-
-/* Layer dependency tracking */
-struct layer_dependency_t {
-    int layer_index;
-    int depends_on_layer;
-};
-
-/* Update frequency statistics */
-struct update_frequency_stats_t {
-    int region_index;
-    int64_t last_update;
-    int update_count;
-    double avg_interval;
-};
+/* Custom log level enum to avoid conflicts with guacamole/client-types.h */
+typedef enum proxy_log_level {
+    PROXY_LOG_ERROR = 0,
+    PROXY_LOG_WARNING = 1,
+    PROXY_LOG_INFO = 2,
+    PROXY_LOG_DEBUG = 3,
+    PROXY_LOG_TRACE = 4
+} proxy_log_level;
 
 /* Function prototypes */
 static int create_server_socket(const char* host, int port);
@@ -90,24 +103,20 @@ static int process_image_instruction(guac_kalman_filter* filter, guac_instructio
 static int process_select_instruction(guac_kalman_filter* filter, guac_instruction* instruction);
 static int process_copy_instruction(guac_kalman_filter* filter, guac_instruction* instruction);
 static int process_end_instruction(guac_kalman_filter* filter, guac_instruction* instruction);
+static void guacd_log_init(proxy_log_level level);
+static void guacd_log(proxy_log_level level, const char* format, ...);
 
-/* Logging functions similar to guacd - using different names to avoid conflicts */
-typedef enum guac_proxy_log_level {
-    PROXY_LOG_ERROR = 0,
-    PROXY_LOG_WARNING = 1,
-    PROXY_LOG_INFO = 2,
-    PROXY_LOG_DEBUG = 3,
-    PROXY_LOG_TRACE = 4
-} guac_proxy_log_level;
+/* Global variables */
+static proxy_log_level guacd_log_level = PROXY_LOG_INFO;
 
-static int guacd_log_level = PROXY_LOG_INFO;
-
-void guacd_log_init(guac_proxy_log_level level) {
+/* Log initialization */
+void guacd_log_init(proxy_log_level level) {
     guacd_log_level = level;
     openlog("guac-kalman-filter", LOG_PID, LOG_DAEMON);
 }
 
-void guacd_log(guac_proxy_log_level level, const char* format, ...) {
+/* Logging function */
+void guacd_log(proxy_log_level level, const char* format, ...) {
     if (level > guacd_log_level)
         return;
         
