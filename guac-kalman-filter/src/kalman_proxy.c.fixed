@@ -1,0 +1,32 @@
+#include "config.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
+#include <math.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
+
+/* 引入Guacamole相关头文件 */
+#include <guacamole/client.h>
+// #include <guacamole/instruction.h> // 移除对instruction.h的引用
+#include <guacamole/protocol.h>
+#include <guacamole/socket.h>
+#include <guacamole/user.h>
+#include <guacamole/user-fntypes.h>
+#include <guacamole/parser.h>
+#include <guacamole/error.h>
+
+/* 引入Kalman滤波器的头文件 */
+#include "kalman_filter.h" 

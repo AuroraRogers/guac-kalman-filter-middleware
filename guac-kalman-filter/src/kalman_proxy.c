@@ -148,7 +148,22 @@ static int create_server_socket(const char* bind_host, int bind_port) {
     // Set socket options
     int opt = 1;
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        guacd_log(PROXY_LOG_WARNING, "Failed to set socket options: %s", strerror(errno));
+        guacd_log(PROXY_LOG_WARNING, "Failed to set SO_REUSEADDR: %s", strerror(errno));
+    }
+    
+    // 添加SO_REUSEPORT选项
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+        guacd_log(PROXY_LOG_WARNING, "Failed to set SO_REUSEPORT: %s", strerror(errno));
+    }
+    
+    // 设置非阻塞模式
+    int flags = fcntl(sockfd, F_GETFL, 0);
+    if (flags < 0) {
+        guacd_log(PROXY_LOG_WARNING, "Failed to get socket flags: %s", strerror(errno));
+    } else {
+        if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK) < 0) {
+            guacd_log(PROXY_LOG_WARNING, "Failed to set non-blocking mode: %s", strerror(errno));
+        }
     }
     
     // Prepare server address
