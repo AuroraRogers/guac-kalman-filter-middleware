@@ -675,13 +675,13 @@ int main(int argc, char** argv) {
     guacd_log_init(PROXY_LOG_DEBUG);
     
     // Create server socket
-    int server_socket = create_server_socket("0.0.0.0", 4822);
+    int server_socket = create_server_socket("0.0.0.0", 4823);
     if (server_socket < 0) {
         guacd_log(PROXY_LOG_ERROR, "Failed to create server socket");
         return 1;
     }
     
-    guacd_log(PROXY_LOG_INFO, "Listening on port 4822");
+    guacd_log(PROXY_LOG_INFO, "Listening on port 4823");
     
     // Main loop
     while (1) {
@@ -701,7 +701,7 @@ int main(int argc, char** argv) {
         guacd_log(PROXY_LOG_INFO, "Client connected from %s", client_ip);
         
         // Connect to guacd
-        int guacd_socket = connect_to_guacd("127.0.0.1", 4823);
+        int guacd_socket = connect_to_guacd("127.0.0.1", 4822);
         if (guacd_socket < 0) {
             guacd_log(PROXY_LOG_ERROR, "Failed to connect to guacd");
             close(client_socket);
