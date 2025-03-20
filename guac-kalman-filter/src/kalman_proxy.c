@@ -18,6 +18,8 @@
 #include <guacamole/socket.h>
 #include <guacamole/timestamp.h>
 
+#include "config_parser.h"
+
 // Forward declarations
 typedef struct guac_kalman_filter guac_kalman_filter;
 typedef struct guac_instruction guac_instruction;
@@ -96,10 +98,28 @@ static uint64_t get_timestamp_us(void);
 
 // Global variables
 static proxy_log_level log_level = PROXY_LOG_INFO;
+static proxy_config_t config;
 
 // Log initialization
 static void guacd_log_init(proxy_log_level level) {
     log_level = level;
+}
+
+// Convert string log level to proxy_log_level enum
+static proxy_log_level string_to_log_level(const char* level_str) {
+    if (strcasecmp(level_str, "ERROR") == 0) {
+        return PROXY_LOG_ERROR;
+    } else if (strcasecmp(level_str, "WARNING") == 0) {
+        return PROXY_LOG_WARNING;
+    } else if (strcasecmp(level_str, "INFO") == 0) {
+        return PROXY_LOG_INFO;
+    } else if (strcasecmp(level_str, "DEBUG") == 0) {
+        return PROXY_LOG_DEBUG;
+    } else if (strcasecmp(level_str, "TRACE") == 0) {
+        return PROXY_LOG_TRACE;
+    } else {
+        return PROXY_LOG_INFO; // Default to INFO
+    }
 }
 
 // Logging function
@@ -671,17 +691,34 @@ static int cuda_kalman_update(guac_kalman_filter* filter, double measurement) {
 
 // Main function
 int main(int argc, char** argv) {
+    const char* config_file = "conf/kalman-proxy.conf";
+    
+    // Check for configuration file argument
+    if (argc > 1) {
+        config_file = argv[1];
+    }
+    
+    // Parse configuration file
+    if (parse_config_file(config_file, &config) != 0) {
+        fprintf(stderr, "Failed to parse configuration file: %s\n", config_file);
+        fprintf(stderr, "Using default configuration\n");
+        set_default_config(&config);
+    }
+    
     // Initialize logging
-    guacd_log_init(PROXY_LOG_DEBUG);
+    guacd_log_init(string_to_log_level(config.log_level));
+    
+    guacd_log(PROXY_LOG_INFO, "Starting Guacamole Kalman Filter Proxy");
+    guacd_log(PROXY_LOG_INFO, "Using configuration file: %s", config_file);
+    guacd_log(PROXY_LOG_INFO, "Listening on %s:%d", config.listen_address, config.listen_port);
+    guacd_log(PROXY_LOG_INFO, "Connecting to guacd at %s:%d", config.target_host, config.target_port);
     
     // Create server socket
-    int server_socket = create_server_socket("0.0.0.0", 4822);
+    int server_socket = create_server_socket(config.listen_address, config.listen_port);
     if (server_socket < 0) {
         guacd_log(PROXY_LOG_ERROR, "Failed to create server socket");
         return 1;
     }
-    
-    guacd_log(PROXY_LOG_INFO, "Listening on port 4822");
     
     // Main loop
     while (1) {
@@ -701,7 +738,7 @@ int main(int argc, char** argv) {
         guacd_log(PROXY_LOG_INFO, "Client connected from %s", client_ip);
         
         // Connect to guacd
-        int guacd_socket = connect_to_guacd("127.0.0.1", 4823);
+        int guacd_socket = connect_to_guacd(config.target_host, config.target_port);
         if (guacd_socket < 0) {
             guacd_log(PROXY_LOG_ERROR, "Failed to connect to guacd");
             close(client_socket);
