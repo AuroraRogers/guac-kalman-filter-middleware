@@ -1,4 +1,4 @@
-# 第四章 Lanczos插值算法在PulseAudio音频优化中的应用研究
+# 第四章 Lanczos插值算法在PulseAudio音频优化中的应用研究与Guacamole协议集成
 
 ## 4.1 引言
 
