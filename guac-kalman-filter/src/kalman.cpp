@@ -93,8 +93,24 @@ void KalmanFilter::reset() {
     pImpl->reset();
 }
 
-// CudaKalmanFilter 的空实现已被移到 kalman_cuda.cu 中
-// 这里只提供前向声明的结构体
-struct CudaKalmanFilter::Impl {};
+std::unique_ptr<Filter> KalmanFilter::clone() const {
+    // 创建一个新的KalmanFilter实例，复制当前实例的参数
+    auto clone = std::make_unique<KalmanFilter>(pImpl->width, pImpl->height, pImpl->params);
+    
+    // 如果需要，可以复制更多状态
+    // 例如，可以复制当前的滤波器状态
+    
+    return clone;
+}
+
+bool KalmanFilter::apply_to_instruction(guac_parser* parser) {
+    // 这个函数应该根据具体需求实现
+    // 例如，可以检查指令是否包含图像数据，如果是，则应用滤波器
+    
+    // 简单实现：假设我们不需要处理任何指令
+    return true;
+}
+
+// CudaKalmanFilter 的实现已移到 kalman_cuda_impl.cpp 中
 
 } // namespace guac

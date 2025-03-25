@@ -24,6 +24,17 @@
 #include <stdint.h>
 #include "kalman_filter.h"
 
+// 日志级别定义
+#define KALMAN_LOG_ERROR   0
+#define KALMAN_LOG_WARNING 1
+#define KALMAN_LOG_INFO    2
+#define KALMAN_LOG_DEBUG   3
+#define KALMAN_LOG_TRACE   4
+
+// 全局变量声明
+extern int g_kalman_log_level;
+extern bool cuda_initialized;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -125,6 +136,14 @@ bool cuda_kalman_update(const double* measurement, double* updated_state);
  *     图层优先级
  */
 void adjust_kalman_params_cuda(guac_kalman_filter* filter, layer_priority_t priority);
+
+/**
+ * 设置CUDA卡尔曼滤波器的日志级别
+ * 
+ * @param level
+ *     日志级别 (0=ERROR, 1=WARNING, 2=INFO, 3=DEBUG, 4=TRACE)
+ */
+void cuda_kalman_set_log_level(int level);
 
 #ifdef __cplusplus
 }

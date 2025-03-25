@@ -99,6 +99,9 @@ set(SOURCES
     src/kalman_proxy.c
     src/kalman_filter.c
     src/kalman_cuda.cu
+    src/kalman_cuda_impl.cpp
+    src/video_cuda.cu
+    src/video_cuda_impl.cpp
 )
 
 # 创建共享库
@@ -191,10 +194,10 @@ install(DIRECTORY docs/
     FILES_MATCHING PATTERN "*.md"
 )
 
-# 安装启动脚本
-install(PROGRAMS start-proxy.bat
-    DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+# 安装启动脚本已被注释，因为start-proxy.bat文件已被删除
+# install(PROGRAMS start-proxy.bat
+#     DESTINATION ${CMAKE_INSTALL_BINDIR}
+#)
 
 # 添加测试目标
 add_executable(simple_proxy

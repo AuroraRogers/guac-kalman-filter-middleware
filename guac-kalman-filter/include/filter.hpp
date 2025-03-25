@@ -4,6 +4,9 @@
 #include <memory>
 #include <vector>
 
+// 前向声明
+struct guac_parser;
+
 namespace guac {
 
 /**
@@ -36,6 +39,21 @@ public:
      * 重置滤波器状态
      */
     virtual void reset() = 0;
+    
+    /**
+     * 克隆当前滤波器实例
+     * 
+     * @return 新的滤波器实例
+     */
+    virtual std::unique_ptr<Filter> clone() const = 0;
+    
+    /**
+     * 将滤波器应用于Guacamole指令
+     * 
+     * @param parser Guacamole解析器
+     * @return 处理成功返回 true，失败返回 false
+     */
+    virtual bool apply_to_instruction(guac_parser* parser) = 0;
     
     /**
      * 创建滤波器实例

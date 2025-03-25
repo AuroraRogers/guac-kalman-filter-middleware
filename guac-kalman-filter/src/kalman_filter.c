@@ -1792,6 +1792,46 @@ static double calculate_vqm(const unsigned char* original, const unsigned char* 
 }
 
 /**
+ * 计算两帧之间的差异值
+ * 
+ * @param frame1 第一帧数据
+ * @param frame2 第二帧数据
+ * @return 帧间差异值（值越大表示差异越大）
+ */
+double calculate_frame_difference(const void* frame1, const void* frame2) {
+    if (!frame1 || !frame2)
+        return 0.0;
+    
+    // 将void指针转换为unsigned char指针以进行字节级比较
+    const unsigned char* f1 = (const unsigned char*)frame1;
+    const unsigned char* f2 = (const unsigned char*)frame2;
+    
+    // 假设帧数据包含宽度和高度信息（前8个字节）
+    int width = *((int*)f1);
+    int height = *((int*)(f1 + sizeof(int)));
+    
+    // 计算通道数（假设为3，即RGB）
+    int channels = 3;
+    
+    // 计算像素数据的起始位置（跳过元数据）
+    f1 += 2 * sizeof(int);
+    f2 += 2 * sizeof(int);
+    
+    // 计算平均绝对差异 (MAD)
+    double total_diff = 0.0;
+    int total_pixels = width * height * channels;
+    
+    for (int i = 0; i < total_pixels; i++) {
+        total_diff += fabs((double)f1[i] - (double)f2[i]);
+    }
+    
+    // 归一化差异值到0-100范围
+    double normalized_diff = (total_diff / total_pixels) * (100.0 / 255.0);
+    
+    return normalized_diff;
+}
+
+/**
  * 更新滤波器处理后的视频质量指标
  */
 void guac_kalman_filter_update_metrics(guac_kalman_filter* filter, const unsigned char* original, 

@@ -23,6 +23,10 @@ public:
     
     bool process(ImageData& image) override;
     void reset() override;
+    
+    // 实现Filter的纯虚函数
+    std::unique_ptr<Filter> clone() const override;
+    bool apply_to_instruction(guac_parser* parser) override;
 
 private:
     struct Impl;
@@ -39,6 +43,10 @@ public:
     
     bool process(ImageData& image) override;
     void reset() override;
+    
+    // 实现Filter的纯虚函数
+    std::unique_ptr<Filter> clone() const override;
+    bool apply_to_instruction(guac_parser* parser) override;
 
 private:
     struct Impl;
