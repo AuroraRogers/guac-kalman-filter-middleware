@@ -52,7 +52,7 @@ configure_file(
 )
 
 # 确保编译器能找到生成的config.h
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR} ${LIBGUAC_INCLUDE_DIRS})
 
 # Find required dependencies
 find_package(PkgConfig REQUIRED)
@@ -148,7 +148,14 @@ install(DIRECTORY src/
 )
 
 # 创建可执行文件
-add_executable(kalman-proxy src/kalman_proxy.c)
+add_executable(kalman-proxy 
+    src/kalman_proxy.c
+    src/video_cuda_impl.cpp
+    src/video_cuda.cu
+    src/kalman_cuda_impl.cpp
+    src/kalman_cuda.cu
+    src/continuous_frame_detection.c
+)
 target_link_libraries(kalman-proxy
     guac-kalman-filter
     ${LIBGUAC_LIBRARIES}

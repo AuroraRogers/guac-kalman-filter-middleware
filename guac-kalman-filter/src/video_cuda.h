@@ -24,6 +24,9 @@
 #include <stdint.h>
 #include "kalman_filter.h"
 
+#define PROTOCOL_MAX_LAYERS 64
+#define MAX_VIDEO_STREAMS 16
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,6 +42,22 @@ typedef struct {
     int height;      // 视频高度
     int channels;    // 颜色通道数
 } video_quality_metrics_t;
+
+
+
+typedef struct video_stream_info_t {
+    bool active;
+    int stream_id;
+    int layer_id;
+    char mimetype[32];
+    int width;
+    int height;
+    int quality;
+    uint64_t last_frame_time;
+    void* cuda_ctx;
+} video_stream_info_t;
+
+extern video_stream_info_t video_streams[MAX_VIDEO_STREAMS];
 
 /**
  * 初始化视频处理的CUDA资源

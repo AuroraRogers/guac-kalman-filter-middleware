@@ -35,10 +35,54 @@ static uint64_t get_timestamp_us(void) {
 #include "kalman_filter.h"
 #include "kalman_cuda.h"
 #include "video_cuda.h"
+#include "protocol_constants.hpp"
+
+#define MAX_BLOB_STREAMS 16
+static unsigned char* d_blob_data = nullptr;
+
+// Define blob_stream_info_t structure
+typedef struct blob_stream_info_t {
+    int stream_id;
+    int layer_id;
+    char mimetype[32];
+    int width;
+    int height;
+    int quality;
+    uint64_t last_process_time;
+    unsigned char* data_buffer;
+    size_t data_size;
+    bool active;
+} blob_stream_info_t;
+
+static blob_stream_info_t blob_streams[MAX_BLOB_STREAMS];
+
+static unsigned char* base64_decode(const char* data, size_t input_len, size_t* output_len) {
+    const char base64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if (input_len % 4 != 0) return nullptr;
+    *output_len = (input_len * 3) / 4;
+    unsigned char* decoded = (unsigned char*)malloc(*output_len);
+    
+    for (size_t i = 0, j = 0; i < input_len;) {
+        uint32_t sextet_a = strchr(base64_table, data[i++]) - base64_table;
+        uint32_t sextet_b = strchr(base64_table, data[i++]) - base64_table;
+        uint32_t sextet_c = strchr(base64_table, data[i++]) - base64_table;
+        uint32_t sextet_d = strchr(base64_table, data[i++]) - base64_table;
+        
+        uint32_t triple = (sextet_a << 18) | (sextet_b << 12) | (sextet_c << 6) | sextet_d;
+        if (j < *output_len) decoded[j++] = (triple >> 16) & 0xFF;
+        if (j < *output_len) decoded[j++] = (triple >> 8) & 0xFF;
+        if (j < *output_len) decoded[j++] = triple & 0xFF;
+    }
+    return decoded;
+}
 
 // 外部声明
 extern bool cuda_init_video(int max_width, int max_height);
 extern void cuda_cleanup_video(void);
+extern bool cuda_process_blob_instruction(int stream_type, int stream_id, int layer_id,
+                                    const char* data, size_t data_size,
+                                    unsigned char* output_buffer);
+
 extern bool cuda_process_video_frame(const unsigned char* frame_data, int width, int height, 
                                    int channels, int quality, unsigned char* output_data);
 
@@ -49,19 +93,9 @@ static int video_max_width = 1920;  // 默认最大宽度
 static int video_max_height = 1080; // 默认最大高度
 
 // 视频流信息映射表
-typedef struct {
-    int stream_id;
-    int layer_id;
-    char mimetype[32];
-    int width;
-    int height;
-    int quality;
-    uint64_t last_frame_time;
-    bool active;
-} video_stream_info_t;
 
-#define MAX_VIDEO_STREAMS 16
-static video_stream_info_t video_streams[MAX_VIDEO_STREAMS];
+// 视频流信息映射表
+video_stream_info_t video_streams[MAX_VIDEO_STREAMS];
 static bool video_processing_initialized = false;
 
 /**
@@ -115,6 +149,75 @@ static void cleanup_video_processing(void) {
     cuda_cleanup_video();
     
     video_processing_initialized = false;
+}
+
+/**
+ * 初始化CUDA视频上下文
+ * 该函数为每个视频流创建一个CUDA上下文
+ * 
+ * @return
+ *     返回初始化的CUDA上下文指针
+ */
+extern "C" void* cuda_video_init_context(void) {
+    // 确保视频处理已初始化
+    if (!video_processing_initialized) {
+        if (!init_video_processing()) {
+            fprintf(stderr, "[CUDA Video] 无法初始化视频处理资源\n");
+            return NULL;
+        }
+    }
+    
+    // 为视频流分配CUDA上下文
+    // 这里简单返回一个非NULL指针，实际应用中可能需要创建真正的CUDA上下文
+    // 或者分配特定的资源给每个视频流
+    void* context = malloc(sizeof(int));
+    if (context) {
+        // 初始化上下文数据
+        *((int*)context) = 1;
+        fprintf(stderr, "[CUDA Video] 创建视频流CUDA上下文: %p\n", context);
+    } else {
+        fprintf(stderr, "[CUDA Video] 无法分配视频流CUDA上下文内存\n");
+    }
+    
+    return context;
+}
+
+/**
+ * 查找可用的视频流插槽
+ * 
+ * @return
+ *     返回可用的视频流索引，如果没有可用插槽则返回-1
+ */
+extern "C" int find_available_stream_slot(void) {
+    // 确保视频处理已初始化
+    if (!video_processing_initialized) {
+        if (!init_video_processing()) {
+            fprintf(stderr, "[CUDA Video] 无法初始化视频处理资源\n");
+            return -1;
+        }
+    }
+    
+    // 查找第一个非活动的视频流插槽
+    for (int i = 0; i < MAX_VIDEO_STREAMS; i++) {
+        if (!video_streams[i].active) {
+            // 初始化新的视频流插槽
+            video_streams[i].active = true;
+            video_streams[i].stream_id = -1; // 将在实际使用时设置
+            video_streams[i].layer_id = -1; // 将在实际使用时设置
+            video_streams[i].width = 0;
+            video_streams[i].height = 0;
+            video_streams[i].quality = 80; // 默认质量
+            video_streams[i].last_frame_time = 0;
+            video_streams[i].cuda_ctx = NULL; // 将在需要时初始化
+            memset(video_streams[i].mimetype, 0, sizeof(video_streams[i].mimetype));
+            
+            fprintf(stderr, "[CUDA Video] 分配视频流插槽 #%d\n", i);
+            return i;
+        }
+    }
+    
+    fprintf(stderr, "[CUDA Video] 警告: 没有可用的视频流插槽\n");
+    return -1; // 没有可用插槽
 }
 
 /**
@@ -238,6 +341,7 @@ bool cuda_process_video_instruction(guac_kalman_filter* filter,
                 video_streams[i].stream_id = stream_id;
                 video_streams[i].layer_id = layer_id;
                 strncpy(video_streams[i].mimetype, mimetype, sizeof(video_streams[i].mimetype) - 1);
+            fprintf(stderr, "[Video Init] 初始化视频流#%d mimetype: %s\n", stream_id, mimetype);
                 video_streams[i].width = 640;  // 默认值，将在实际帧到达时更新
                 video_streams[i].height = 480; // 默认值，将在实际帧到达时更新
                 video_streams[i].quality = filter->target_quality;
@@ -254,6 +358,7 @@ bool cuda_process_video_instruction(guac_kalman_filter* filter,
         // 更新现有流信息
         video_streams[stream_idx].layer_id = layer_id;
         strncpy(video_streams[stream_idx].mimetype, mimetype, sizeof(video_streams[stream_idx].mimetype) - 1);
+    fprintf(stderr, "[Video Update] 更新视频流#%d mimetype: %s\n", stream_id, mimetype);
     }
     
     // 设置图层优先级为视频优先级

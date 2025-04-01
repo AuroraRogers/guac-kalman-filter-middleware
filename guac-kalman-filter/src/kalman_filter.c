@@ -560,9 +560,16 @@ void guac_kalman_filter_init(guac_kalman_filter* filter) {
     filter->video_optimization_enabled = false;
     filter->target_quality = 80; /* Default to 80% quality */
     filter->target_bandwidth = 0; /* No bandwidth limit by default */
+    filter->base_target_bandwidth = 2000000; /* 2Mbps base target bandwidth */
     filter->image_buffer_length = 0;
     filter->metrics_history_position = 0;
     filter->frames_processed = 0;
+    
+    /* Initialize continuous frame detection */
+    filter->max_continuous_frames = 10;      /* Default 10 frames to detect video */
+    filter->min_frame_interval = 16.0;       /* Min frame interval 16ms (about 60fps) */
+    filter->max_frame_interval = 100.0;      /* Max frame interval 100ms (about 10fps) */
+    filter->frame_interval_threshold = 20.0;  /* Frame interval variance threshold */
     
     /* Initialize metrics history */
     for (i = 0; i < GUAC_KALMAN_MAX_FRAME_COUNT; i++) {
@@ -1133,10 +1140,12 @@ static int filter_image_instruction(guac_kalman_filter* filter, const char* buff
         return 0; // 解析失败
     }
     
+    // 获取当前时间戳
+    uint64_t timestamp = get_timestamp_us();
+    
     // 记录统计数据（如果启用）
     if (filter->stats_enabled && filter->stats_fd >= 0) {
         char stats_buffer[512];
-        uint64_t timestamp = get_timestamp_us();
         snprintf(stats_buffer, sizeof(stats_buffer), 
                 "img,%d,%s,%d,%s,%d,%d,%lu\n", 
                 stream_id, composite_mode, layer_id, mimetype, x, y, timestamp);
@@ -1145,8 +1154,101 @@ static int filter_image_instruction(guac_kalman_filter* filter, const char* buff
         }
     }
     
-    // 目前仅记录图像信息，不做实际过滤
-    // 将来可以在这里实现图像质量优化
+    // 更新连续帧检测状态
+    if (filter->continuous_frame_detection && layer_id < filter->max_layers) {
+        // 检查是否为图像类型的MIME
+        bool is_image = (strstr(mimetype, "image/") != NULL);
+        
+        if (is_image) {
+            // 更新连续帧检测状态
+            bool status_changed = guac_kalman_filter_update_continuous_detection(filter, layer_id, timestamp);
+            
+            // 如果检测状态发生变化，应用视频优化
+            if (status_changed) {
+                guac_kalman_filter_apply_video_optimization(filter, layer_id);
+                
+                // 记录日志
+                fprintf(stderr, "[图像指令] 图层 %d 视频内容状态变化: %s (置信度=%d%%)\n", 
+                       layer_id, 
+                       filter->continuous_frame_detection[layer_id].is_video_content ? "是" : "否",
+                       filter->continuous_frame_detection[layer_id].detection_confidence);
+            }
+            
+            // 如果是视频内容，可以在这里对图像质量进行优化
+            if (filter->continuous_frame_detection[layer_id].is_video_content) {
+                // 这里可以添加图像质量优化的代码
+                // 例如，根据带宽预测调整图像质量
+                
+                // 记录日志
+                if (filter->stats_enabled && filter->stats_fd >= 0) {
+                    char video_stats[512];
+                    snprintf(video_stats, sizeof(video_stats), 
+                            "video_content,%d,%d,%lu,%.2f,%.2f,%d\n", 
+                            layer_id, 
+                            filter->continuous_frame_detection[layer_id].detection_confidence,
+                            filter->continuous_frame_detection[layer_id].frame_count,
+                            filter->continuous_frame_detection[layer_id].avg_frame_interval,
+                            filter->continuous_frame_detection[layer_id].frame_interval_variance,
+                            (int)(1000.0 / filter->continuous_frame_detection[layer_id].avg_frame_interval));
+                    if (write(filter->stats_fd, video_stats, strlen(video_stats)) < 0) {
+                        perror("Failed to write video content stats");
+                    }
+                }
+                
+                // 计算并记录图像质量指标
+                // 注意：这里假设我们能够访问原始图像和处理后的图像数据
+                // 在实际实现中，可能需要从指令中提取图像数据或使用缓存的图像数据
+                if (filter->image_buffer_length > 0) {
+                    // 假设我们有原始图像和处理后的图像数据
+                    // 在实际实现中，这里需要根据实际情况获取图像数据
+                    unsigned char* original = filter->image_buffer;
+                    unsigned char* processed = filter->image_buffer; // 在实际实现中，这应该是处理后的图像
+                    
+                    // 假设图像尺寸和通道数
+                    int width = 800;  // 实际实现中应该从图像数据中获取
+                    int height = 600; // 实际实现中应该从图像数据中获取
+                    int channels = 3; // RGB图像
+                    
+                    // 计算图像质量指标
+                    double psnr = calculate_psnr(original, processed, width, height, channels);
+                    double ssim = calculate_ssim(original, processed, width, height, channels);
+                    double ms_ssim = calculate_ms_ssim(original, processed, width, height, channels);
+                    double vmaf = calculate_vmaf(original, processed, width, height, channels);
+                    double vqm = calculate_vqm(original, processed, width, height, channels);
+                    
+                    // 获取当前时间戳
+                    uint64_t quality_timestamp = get_timestamp_us();
+                    
+                    // 记录到CSV文件
+                    FILE* fp = fopen("image_quality_metrics.csv", "a");
+                    if (fp) {
+                        // 如果文件为空，添加标题行
+                        fseek(fp, 0, SEEK_END);
+                        if (ftell(fp) == 0) {
+                            fprintf(fp, "timestamp,layer_id,confidence,frame_count,psnr,ssim,ms_ssim,vmaf,vqm,width,height\n");
+                        }
+                        
+                        // 添加数据行
+                        fprintf(fp, "%lu,%d,%d,%lu,%.2f,%.4f,%.4f,%.2f,%.2f,%d,%d\n", 
+                                (unsigned long)quality_timestamp, 
+                                layer_id,
+                                filter->continuous_frame_detection[layer_id].detection_confidence,
+                                filter->continuous_frame_detection[layer_id].frame_count,
+                                psnr, ssim, ms_ssim, vmaf, vqm, width, height);
+                        
+                        fclose(fp);
+                        
+                        // 记录日志
+                        fprintf(stderr, "[图像质量指标] 图层 %d: PSNR=%.2f, SSIM=%.4f, MS-SSIM=%.4f, VMAF=%.2f, VQM=%.2f\n",
+                               layer_id, psnr, ssim, ms_ssim, vmaf, vqm);
+                    }
+                    
+                    // 更新滤波器的质量指标历史
+                    guac_kalman_filter_update_metrics(filter, original, processed, width, height, channels);
+                }
+            }
+        }
+    }
     
     // 复制原始指令到输出缓冲区
     if (length > *output_length) {

@@ -98,10 +98,40 @@ typedef struct scene_change_detection {
     bool is_scene_changing;
 } scene_change_detection_t;
 
+/* 连续帧检测 */
+typedef struct continuous_frame_detection {
+    int layer_id;                 /* 图层ID */
+    uint64_t last_frame_time;     /* 上一帧时间戳 */
+    uint64_t frame_count;         /* 连续帧计数 */
+    double avg_frame_interval;    /* 平均帧间隔(ms) */
+    double frame_interval_variance; /* 帧间隔方差 */
+    bool is_video_content;        /* 是否为视频内容 */
+    int detection_confidence;     /* 检测置信度(0-100) */
+    uint64_t first_detection_time; /* 首次检测为视频的时间 */
+    uint64_t last_detection_time;  /* 最近一次检测为视频的时间 */
+} continuous_frame_detection_t;
+
 /**
  * The Kalman filter state for RDP protocol
  */
 typedef struct guac_kalman_filter {
+    int max_layers;
+    int max_regions;
+    layer_priority_t* layer_priorities;
+    layer_dependency_t* layer_dependencies;
+    update_frequency_stats_t* frequency_stats;
+    bandwidth_prediction_t bandwidth_prediction;
+    scene_change_detection_t scene_detection;
+    
+    /* 连续帧检测相关 */
+    continuous_frame_detection_t* continuous_frame_detection; /* 每个图层的连续帧检测 */
+    int max_continuous_frames;       /* 判定为视频的最小连续帧数 */
+    double max_frame_interval;       /* 判定为视频的最大帧间隔(ms) */
+    double min_frame_interval;       /* 判定为视频的最小帧间隔(ms) */
+    double frame_interval_threshold;  /* 帧间隔方差阈值 */
+    int base_target_bandwidth;      /* 基础目标带宽(bps) */
+
+
     // CUDA device pointers
     double* d_F;           // State transition matrix
     double* d_H;           // Measurement matrix
@@ -118,8 +148,6 @@ typedef struct guac_kalman_filter {
     double* d_temp4;      // Temporary workspace
 
     // 基本配置
-    int max_layers;       // 最大图层数
-    int max_regions;      // 最大区域数
     double sampling_rate; // 采样率
 
     // 噪声参数
@@ -265,11 +293,8 @@ typedef struct guac_kalman_filter {
     double vqm_weight;      /* VQM权重 */
 
     // 新增性能优化相关成员
-    layer_priority_t* layer_priorities;
-    layer_dependency_t* layer_dependencies;
-    update_frequency_stats_t* frequency_stats;
-    bandwidth_prediction_t bandwidth_prediction;
-    scene_change_detection_t scene_detection;
+
+
     
     // 缓冲区管理
     void* frame_buffer;
@@ -393,6 +418,21 @@ void guac_kalman_filter_calculate_metrics(guac_kalman_filter* filter,
                                         guac_video_metrics* metrics);
 
 /* 新增函数声明 */
+// 连续帧检测相关函数
+void guac_kalman_filter_configure_continuous_detection(guac_kalman_filter* filter,
+                                                     int max_frames,
+                                                     double min_interval,
+                                                     double max_interval,
+                                                     double variance_threshold);
+
+void guac_kalman_filter_reset_continuous_detection(guac_kalman_filter* filter, int layer_id);
+
+bool guac_kalman_filter_is_video_content(guac_kalman_filter* filter, int layer_id);
+
+int guac_kalman_filter_get_video_confidence(guac_kalman_filter* filter, int layer_id);
+
+double guac_kalman_filter_get_estimated_fps(guac_kalman_filter* filter, int layer_id);
+
 // 图层管理
 void guac_kalman_filter_set_layer_priority(guac_kalman_filter* filter, int layer_id, layer_priority_t priority);
 void guac_kalman_filter_add_layer_dependency(guac_kalman_filter* filter, int layer_id, int depends_on, float weight);
@@ -420,6 +460,43 @@ void guac_kalman_filter_cleanup_buffer(guac_kalman_filter* filter);
 // 性能统计
 void guac_kalman_filter_update_performance_stats(guac_kalman_filter* filter, uint64_t processing_time);
 void guac_kalman_filter_print_performance_report(guac_kalman_filter* filter);
+
+/**
+ * 更新连续帧检测状态
+ * 当收到新的图像帧时调用此函数，用于检测视频内容
+ *
+ * @param filter 卡尔曼滤波器
+ * @param layer_id 图层ID
+ * @param timestamp 当前时间戳(微秒)
+ * @return 如果检测状态发生变化则返回true，否则返回false
+ */
+bool guac_kalman_filter_update_continuous_detection(guac_kalman_filter* filter, int layer_id, uint64_t timestamp);
+
+/**
+ * 应用视频内容优化
+ * 根据视频内容检测结果调整卡尔曼滤波器参数
+ *
+ * @param filter 卡尔曼滤波器
+ * @param layer_id 图层ID
+ */
+void guac_kalman_filter_apply_video_optimization(guac_kalman_filter* filter, int layer_id);
+
+/**
+ * 记录视频质量评估指标到CSV文件
+ * 记录PSNR、SSIM、MS-SSIM、VMAF和VQM等指标
+ *
+ * @param filter 卡尔曼滤波器
+ * @param metrics 视频质量指标结构体
+ * @param filename CSV文件名，如果为NULL则使用默认文件名"video_kalman_metrics.csv"
+ * @return 成功返回true，失败返回false
+ */
+bool guac_kalman_filter_record_video_metrics(guac_kalman_filter* filter, const guac_video_metrics* metrics, const char* filename);
+
+/**
+ * 更新滤波器处理后的视频质量指标
+ */
+void guac_kalman_filter_update_metrics(guac_kalman_filter* filter, const unsigned char* original, 
+                                       const unsigned char* processed, int width, int height, int channels);
 
 /**
  * 计算两帧之间的差异
